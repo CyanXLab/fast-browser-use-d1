@@ -457,6 +457,8 @@ browsing live websites still requires network access.
 | `FBU_LLAMACPP_CACHE_REUSE` / `FBU_LLAMACPP_CACHE_RAM` | 256 / 1024 | llama-server KV-prefix cache knobs (benefit the plan/field-text chat endpoint; LFM2 decision requests cannot reuse KV across calls — llama.cpp limitation) |
 | `FBU_LLAMACPP_CTX` | 16384 | llama-server context window; overflowing requests are retried once with compacted state and server error details are surfaced verbatim |
 | `FBU_PLAN` | auto | auto = decompose multi-step goals into a subgoal checklist; 1 = always; 0 = never |
+| `FBU_MAX_CANDIDATES` | 28 | Cap on the visible candidate table: on huge pages (bing) goal-irrelevant nav links are dropped first (fills/buttons/keyword matches survive), sharpening confidence and cutting CPU scoring time |
+| `FBU_NO_VALUE_LIMIT` | 3 | Stop after N consecutive failures to determine a fill value; model refusals ("None of the above…") are never typed into real fields |
 | `FBU_MAX_STEPS` | 60 | Max browser actions per task |
 | `FBU_MODEL` / `--model` | d1 GGUF file (`d1-3B-Q4_K_M.gguf` default) or a local model directory |
 

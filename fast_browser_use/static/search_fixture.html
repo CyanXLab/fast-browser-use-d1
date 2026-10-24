@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Demo Search</title>
+<style>body{font-family:sans-serif;max-width:640px;margin:48px auto}input{width:60%;padding:8px}button{padding:8px 16px}</style>
+</head>
+<body>
+<h1>演示搜索</h1>
+<p>一个最小的搜索页，用于验证 fill → click → results 链路。</p>
+<form onsubmit="return doSearch()">
+  <input id="q" type="text" placeholder="Enter your search term" aria-label="Enter your search term">
+  <button id="go" type="submit">Search</button>
+</form>
+<div id="results"></div>
+<script>
+function doSearch() {
+  var q = document.getElementById("q").value.trim();
+  var r = document.getElementById("results");
+  if (q) { r.innerHTML = "<ul><li>Result for <b>" + q + "</b> — channel home</li></ul>"; }
+  return false;
+}
+</script>
+</body>
+</html>

@@ -183,6 +183,86 @@ def legal_candidates(state):
     return candidates
 
 
+_ACTION_WORDS = ("search", "submit", "go", "accept", "agree", "consent", "next", "sign in", "log in", "login")
+
+
+def _goal_tokens(goal):
+    return set(re.findall(r"[a-z0-9][a-z0-9._-]{2,}", str(goal or "").lower())) | set(
+        re.findall(r"[\u4e00-\u9fff]{2,}", str(goal or ""))
+    )
+
+
+def focus_candidates(candidates, goal, *, limit=None):
+    """Cap the candidate table so a small decision model stays decisive.
+
+    Bing-scale pages expose dozens of navigation links; a 3B model diffuses
+    over them (observed confidences 0.05-0.14, random clicks on Maps/News)
+    and every extra candidate burns scoring latency on CPU. Fill/select,
+    terminal, wait and scroll candidates are always kept; clicks are ranked
+    by goal-keyword overlap, then by action-y label words, then dropped.
+    """
+    if limit is None:
+        try:
+            limit = int(os.environ.get("FBU_MAX_CANDIDATES", "28") or 28)
+        except ValueError:
+            limit = 28
+    limit = max(int(limit), 8)
+    if len(candidates) <= limit:
+        return candidates
+    tokens = _goal_tokens(goal)
+
+    def rank(candidate):
+        if candidate["operation"] != "CLICK":
+            return 0  # fills, selects, DONE/BLOCKED, waits, ASK_LLM
+        desc = candidate["description"].lower()
+        if tokens and any(t in desc for t in tokens):
+            return 1
+        if any(w in desc for w in _ACTION_WORDS):
+            return 2
+        return 3
+
+    ranked = sorted(range(len(candidates)), key=lambda i: (rank(candidates[i]), i))
+    kept = set(ranked[:limit])
+    return [c for i, c in enumerate(candidates) if i in kept]
+
+
+def demote_repeats(candidates, scores, history, *, factor=0.15):
+    """Penalize clicks that recently produced no page change (wander guard).
+
+    Real logs show the model re-clicking "Maps"/"Privacy Statement" for many
+    steps at conf 0.1. Demoting already-tried no-effect clicks returns that
+    probability mass to untried candidates. Returns renormalized scores, or
+    None when the guard does not apply (nothing to demote, or everything was
+    already tried).
+    """
+    repeats = {
+        h.get("choice")
+        for h in (history or [])[-6:]
+        if h.get("page_changed") is False and h.get("choice") and h.get("kind") not in {"wait", "ask_llm", "no_value"}
+    }
+    if not repeats or len(candidates) <= 1:
+        return None
+    if all(c["id"] in repeats for c in candidates):
+        return None
+    adjusted = [
+        s * factor if c["id"] in repeats and c["operation"] == "CLICK" else s
+        for c, s in zip(candidates, scores, strict=True)
+    ]
+    total = sum(adjusted)
+    if total <= 0:
+        return None
+    return [s / total for s in adjusted]
+
+
+def plan_lost_goal_tokens(goal, steps):
+    """True when a plan dropped every key token of the goal (d1 plan hallucination)."""
+    tokens = [t for t in re.findall(r"[A-Za-z0-9][A-Za-z0-9._-]{2,}", goal or "")]
+    if not tokens:
+        return False
+    joined = " ".join(steps).lower()
+    return not any(t.lower() in joined for t in tokens)
+
+
 def decision_from_scores(candidates, scores):
     if len(scores) != len(candidates) or not scores:
         raise ValueError("Invalid candidate score count")
@@ -399,6 +479,81 @@ def parse_field_text(text):
     return value
 
 
+# Refusal / reasoning phrases that must never be typed into a real field.
+# The decision model sometimes echoes the "None of the above" option label
+# (or similar meta text) as the field value; typing that into a search box is
+# worse than failing the step, so these are rejected outright.
+_GARBAGE_SUBSTRINGS = (
+    "none of the above",
+    "supplies no value",
+    "no valid field value",
+    "not enough information",
+    "cannot be determined",
+)
+_GARBAGE_STARTS = (
+    "i should",
+    "i need",
+    "let me",
+    "i'll",
+    "i will",
+    "the goal",
+    "the user",
+    "based on",
+    "according to",
+    "无法确定",
+    "未提供",
+    "没有提供",
+    "目标未",
+)
+
+
+def is_garbage_field_text(value):
+    """True when the value is model meta-text (refusal or reasoning), not data."""
+    if not isinstance(value, str):
+        return True
+    lowered = value.strip().lower()
+    if not lowered:
+        return True
+    if any(marker in lowered for marker in _GARBAGE_SUBSTRINGS):
+        return True
+    return any(lowered.startswith(marker) for marker in _GARBAGE_STARTS)
+
+
+def extract_field_fragments(goal):
+    """Candidate values for a fill field, extracted from a (bilingual) goal.
+
+    Order: quoted strings, keyword-adjacent spans (search for X / 搜索X),
+    latin/digit tokens (product names like CyanXLab), then the whole goal.
+    Deduplicated case-insensitively, at most 8 candidates.
+    """
+    fragments = []
+    for match in re.finditer(r'"([^"]{1,120})"|「([^」]{1,120})」|『([^』]{1,120})』|“([^”]{1,120})”', goal):
+        fragments.append(next(g for g in match.groups() if g))
+    for match in re.finditer(
+        r"(?:search for|find|open|enter|type|fill in|looking for|搜索|查找|查询|搜寻"
+        r"|输入|填写|填入|打开|寻找|搜一下|找)"
+        r"\s*[:：]?\s*(.{2,120}?)(?=[，。、,.;；！!？?]|$)",
+        goal,
+        flags=re.IGNORECASE,
+    ):
+        fragments.append(match.group(1).strip())
+    for match in re.finditer(r"[A-Za-z0-9][A-Za-z0-9._@-]{1,60}", goal):
+        token = match.group(0)
+        if any(ch.isalpha() or ch.isdigit() for ch in token):
+            fragments.append(token)
+    if goal and len(goal) <= 120:
+        fragments.append(goal)
+    seen, options = set(), []
+    for fragment in fragments:
+        fragment = fragment.strip()
+        if fragment and fragment.lower() not in seen:
+            seen.add(fragment.lower())
+            options.append(fragment)
+        if len(options) >= 8:
+            break
+    return options
+
+
 _engine = None
 _init_lock = threading.Lock()
 
@@ -511,6 +666,9 @@ def choose(state, goal, history, *, task=None):
 
     if remote_llm.enabled():
         candidates.append(remote_llm.ASK_LLM_CANDIDATE)
+    # Bing-scale pages drown a 3B model in navigation links: focus the table
+    # before scoring so probabilities stay sharp and CPU latency stays bounded.
+    candidates = focus_candidates(candidates, task or goal)
     if len(candidates) > len(engine.labels):
         raise ValueError("Too many actions; narrow the visible page before choosing")
     recent = "\n".join(
@@ -600,6 +758,10 @@ def choose(state, goal, history, *, task=None):
     scores, telemetry = engine.score(
         content, len(candidates), candidates=[a["description"] for a in candidates]
     )
+    # System-2 guardrail: clicks that recently did nothing lose probability mass.
+    adjusted = demote_repeats(candidates, scores, history)
+    if adjusted is not None:
+        scores = adjusted
     result = {
         **decision_from_scores(candidates, scores),
         **telemetry,
@@ -626,7 +788,10 @@ def field_context(goal, action, page, history, *, task=None):
 
 
 def field_text(context):
-    return get_model().generate_text(context)
+    value, helper = get_model().generate_text(context)
+    if is_garbage_field_text(value):
+        raise ValueError("Model produced meta-text instead of a field value; nothing typed")
+    return value, helper
 
 
 def make_plan(goal, page):

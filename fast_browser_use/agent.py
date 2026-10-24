@@ -10,6 +10,10 @@ from .model import action_space, choose, field_context, field_text, looks_multis
 from .questions import MAX_STEPS
 
 
+class NoFieldValue(RuntimeError):
+    """The model could not produce a usable value for a fill field."""
+
+
 class Agent:
     def __init__(self, url, goals, *, record_dir=None, screenshots=False, video_dir=None, viewport=None,
                  headless=None, session_history=None):
@@ -84,6 +88,51 @@ class Agent:
                 state["status"] = "ready"
                 state["page"] = state["browser"].observe(screenshot=self.screenshots)
                 state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
+                return self.snapshot()
+            except NoFieldValue as error:
+                # Text generation refused/garbled. Never type meta-text: record
+                # the failure as feedback so the next decision can pick another
+                # action, and stop after repeated failures instead of looping.
+                state.setdefault("rejections", []).append({
+                    "decision_index": before_decisions if len(state["decisions"]) > before_decisions else None,
+                    "execution_recorded": False,
+                    "reason": str(error),
+                    "elapsed_ms": round((time.perf_counter() - state["started_at"]) * 1000),
+                })
+                state["history"].append({
+                    "step": len(state["history"]) + 1,
+                    "action": "text generation failed; nothing typed",
+                    "kind": "no_value",
+                    "choice": None,
+                    "probability": 0.0,
+                    "confidence": 0.0,
+                    "latency_ms": 0,
+                    "text": None,
+                    "text_helper": None,
+                    "text_latency_ms": 0,
+                    "operation": "TYPE_TEXT",
+                    "target": None,
+                    "page_changed": False,
+                    "url": state["page"]["url"],
+                    "usage": {},
+                    "executed_ms": round((time.perf_counter() - state["started_at"]) * 1000),
+                    "elapsed_ms": round((time.perf_counter() - state["started_at"]) * 1000),
+                })
+                state["decision"] = None
+                state["no_value_streak"] = state.get("no_value_streak", 0) + 1
+                state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
+                try:
+                    limit = max(int(os.environ.get("FBU_NO_VALUE_LIMIT", "3") or 3), 1)
+                except ValueError:
+                    limit = 3
+                if state["no_value_streak"] > limit:
+                    state["status"] = "blocked"
+                    state["summary"] = (
+                        "本地模型无法从目标中提取要输入的文本，已停止避免误输入。"
+                        f"最后一次错误：{error}。可尝试把目标改写为更明确的“搜索<关键词>”形式。"
+                    )
+                    return self.snapshot()
+                state["status"] = "ready"
                 return self.snapshot()
         elif name == "predict":
             if not state["browser"]:
@@ -211,7 +260,10 @@ class Agent:
                 if self.pending_text and self.pending_text[0] == context:
                     _, text, helper = self.pending_text
                 else:
-                    text, helper = field_text(context)
+                    try:
+                        text, helper = field_text(context)
+                    except ValueError as error:
+                        raise NoFieldValue(str(error)) from None
                     self.pending_text = (context, text, helper)
                     state["text_calls"].append({**helper, "field": action["label"], "value": text})
             # Browser.act checks freshness immediately before input, including after text generation.
@@ -254,7 +306,7 @@ class Agent:
                 )
             repeated = state["history"][-3:]
             stuck = len(repeated) == 3 and all(
-                h["page_changed"] is False and h["kind"] not in {"wait", "ask_llm"} for h in repeated
+                h["page_changed"] is False and h["kind"] not in {"wait", "ask_llm", "no_value"} for h in repeated
             )
             if stuck:
                 rescue = self._rescue()

@@ -350,30 +350,20 @@ class LlamaCppModel:
 
     def _scored_field_text(self, context):
         """System-1 fallback: pick the field value by scoring goal fragments."""
-        from .model import parse_field_text
+        from .model import extract_field_fragments, parse_field_text
 
         goal = str(context.get("goal") or context.get("subgoal") or "")
-        fragments = []
-        for match in re.finditer(r'"([^"]{1,120})"', goal):
-            fragments.append(match.group(1))
-        for match in re.finditer(
-            r"(?:search for|find|open|enter|type|fill in|looking for)\s+(.{3,120}?)(?:[.,;]|$)",
-            goal, flags=re.IGNORECASE,
-        ):
-            fragments.append(match.group(1).strip())
-        if goal and len(goal) <= 120:
-            fragments.append(goal)
-        seen, options = set(), {}
-        for index, fragment in enumerate(fragments):
-            fragment = fragment.strip()
-            if fragment and fragment.lower() not in seen:
-                seen.add(fragment.lower())
-                options[self.labels[len(options)]] = fragment
+        options = {}
+        for fragment in extract_field_fragments(goal):
+            options[self.labels[len(options)]] = fragment
             if len(options) >= 8:
                 break
         if not options:
             raise ValueError("Local model returned no valid field value; nothing typed.")
-        options[self.labels[len(options)]] = "None of the above; the goal supplies no value for this field."
+        # The refusal option must never leak its own label as a typed value:
+        # when the model picks it we fail the step instead of typing meta-text.
+        fallback_code = self.labels[len(options)]
+        options[fallback_code] = "None of the above; the goal supplies no value for this field."
         answer = self._systemone(
             json.dumps(context, ensure_ascii=False),
             {
@@ -387,13 +377,13 @@ class LlamaCppModel:
             purpose="text",
         )
         choice = answer.get("choice")
-        if choice is None or choice not in options:
+        if choice is None or choice not in options or choice == fallback_code:
             raise ValueError("Local model returned no valid field value; nothing typed.")
         return parse_field_text(json.dumps({"text": options[choice]}))
 
     def plan(self, goal, page):
         from .actions import action_space
-        from .model import LARGE_PAGE_PLAN_POLICY, PLAN_POLICY
+        from .model import LARGE_PAGE_PLAN_POLICY, PLAN_POLICY, plan_lost_goal_tokens
 
         elements, _, _ = action_space(page["actions"])
         labels = [
@@ -414,6 +404,7 @@ class LlamaCppModel:
                 isinstance(steps, list)
                 and 1 <= len(steps) <= 12
                 and all(isinstance(s, str) and 0 < len(s.strip()) <= 500 for s in steps)
+                and not plan_lost_goal_tokens(goal, steps)
             ):
                 telemetry = {
                     "model": self.name,

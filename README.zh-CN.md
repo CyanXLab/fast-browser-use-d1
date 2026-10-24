@@ -403,6 +403,8 @@ PyTorch 从 Hugging Face 下载；现有 ModelScope 镜像仅用于 MLX。下载
 | `FBU_LLAMACPP_CACHE_REUSE` / `FBU_LLAMACPP_CACHE_RAM` | 256 / 1024 | llama-server KV 前缀缓存参数（对计划/字段文本生成端点有效；LFM2 决策请求受 llama.cpp 限制无法跨请求复用 KV） |
 | `FBU_LLAMACPP_CTX` | 16384 | llama-server 上下文窗口；超限请求自动压缩页面文本重试一次，错误详情会完整透出 |
 | `FBU_PLAN` | auto | auto = 多步目标自动拆解为子目标清单；1 = 总是；0 = 从不 |
+| `FBU_MAX_CANDIDATES` | 28 | 决策候选表上限：大页面（如 bing）自动裁掉与目标无关的导航链接（输入框/按钮/关键词命中优先保留），置信度更集中、CPU 打分更快 |
+| `FBU_NO_VALUE_LIMIT` | 3 | 连续 N 次无法确定要输入的文本就停止任务；模型拒绝语（如 "None of the above…"）永远不会被打进真实页面 |
 | `FBU_MAX_STEPS` | 60 | 每个任务的最大浏览器动作数 |
 | `FBU_MODEL` / `--model` | d1 GGUF 权重文件（默认 `d1-3B-Q4_K_M.gguf`）或本地权重目录 |
 
