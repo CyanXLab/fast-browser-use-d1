@@ -202,6 +202,30 @@ def _render_step(step_number, state, last, step_total, decision, show_detail):
             tokens=usage.get("prompt_tokens"),
             passes=decision.get("scoring_passes"),
         )
+        _render_escalation(decision)
+
+
+def _render_escalation(decision):
+    """One dim line when the remote LLM reviewed a low-confidence decision.
+
+    The user otherwise cannot tell whether the supervisor actually fired
+    (observed confusion: "ASK_LLM 5%" in the candidate line but no trace of
+    the remote verdict). Failures are shown too, so a dead API key surfaces.
+    """
+    record = decision.get("escalation")
+    if not record:
+        return
+    trigger = record.get("trigger", "low_confidence")
+    if record.get("error"):
+        tui.warn(f"🤝 远程复核失败（{trigger}）: {record['error']}")
+    elif record.get("candidate"):
+        local = decision.get("action") or record.get("local_choice") or "?"
+        tui.info(
+            f"🤝 远程复核（本地 conf {record.get('local_confidence', 0):.2f}）: "
+            f"{local} → 改判 {record['candidate']}"
+        )
+    elif record.get("ignored"):
+        tui.info(f"🤝 远程复核未采纳（{record.get('ignored')}），维持本地选择")
 
 
 def chat(start_url=DEFAULT_START_URL, headless=False):

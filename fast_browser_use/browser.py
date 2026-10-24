@@ -138,6 +138,12 @@ class Browser:
         quiet_ms = int(os.environ.get("FBU_SETTLE_MS", "150"))
         if not 0 <= quiet_ms <= 2000:
             raise ValueError("FBU_SETTLE_MS must be between 0 and 2000")
+        # Adaptive settling: after consecutive stale rejections the page has
+        # proven itself dynamic (consent banners animating in, tickers, lazy
+        # hydration). Widen the quiet window instead of re-deciding on a page
+        # that will invalidate the decision again.
+        boost = min(int(getattr(self, "settle_boost", 0) or 0), 4)
+        quiet_ms = min(quiet_ms + 250 * boost, 2000)
         if quiet_ms == 0:
             return page
         started = changed = time.perf_counter()
@@ -149,7 +155,7 @@ class Browser:
             minimum = max(minimum, 0.5)
         self.prepared_document = document
         self.last_input_kind = None
-        deadline = started + max(1.5, minimum * 4)
+        deadline = started + min(max(1.5, minimum * 4), 6.0 + boost)
         previous, samples, settled = page.get("marker"), 0, False
         while True:
             try:

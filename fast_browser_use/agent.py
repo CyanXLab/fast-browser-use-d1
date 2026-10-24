@@ -78,6 +78,10 @@ class Agent:
             except StalePage as error:
                 # act consumes its decision before checking or dispatching, so
                 # retain the prediction index even when state.decision is None.
+                # The streak feeds prepare(): a page that keeps mutating gets a
+                # longer quiet window before the next decision instead of
+                # burning one inference round-trip after another.
+                state["stale_streak"] = state.get("stale_streak", 0) + 1
                 state.setdefault("rejections", []).append({
                     "decision_index": before_decisions if len(state["decisions"]) > before_decisions else None,
                     "execution_recorded": len(state["history"]) > before_actions,
@@ -141,6 +145,7 @@ class Agent:
                 state["started_at"] = time.perf_counter()
             if not state["browser"].fresh(state["page"]):
                 state["page"] = state["browser"].observe(screenshot=self.screenshots)
+            state["browser"].settle_boost = min(state.get("stale_streak", 0), 4)
             # Settle the default full-goal view before spending time on inference.
             plan_mode = os.environ.get("FBU_PLAN", "auto")
             should_plan = plan_mode == "1" or (plan_mode == "auto" and looks_multistep(state["goal"]))
@@ -270,6 +275,7 @@ class Agent:
             state["browser"].act(action, page, text=text)
             self.pending_text = None
             state["ask_llm_streak"] = 0
+            state["stale_streak"] = 0
             state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
             # Record execution before observing. A stale post-action observation must not erase the action.
             state["history"].append(
@@ -287,6 +293,7 @@ class Agent:
                     "operation": decision["operation"],
                     "target": decision["target"],
                     "page_changed": None,
+                    "submitted_with_enter": bool(action.get("enter_submit")) and action["kind"] == "fill",
                     "url": page["url"],
                     "usage": decision["usage"],
                     "executed_ms": round((time.perf_counter() - state["started_at"]) * 1000),

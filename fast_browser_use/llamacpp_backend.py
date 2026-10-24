@@ -38,7 +38,8 @@ COMPLETION_INSTRUCTION = (
     "in the observed state: a visible confirmation message, the requested page being open, "
     "or the requested save, submit or search action already executed with its effect observed. "
     "Correctly filled form fields are preparation, not completion. Is the subgoal fully "
-    "accomplished right now?"
+    "accomplished right now? Note: a filled field with search results visible below it means "
+    "the search WAS submitted and IS complete."
 )
 
 
@@ -383,7 +384,7 @@ class LlamaCppModel:
 
     def plan(self, goal, page):
         from .actions import action_space
-        from .model import LARGE_PAGE_PLAN_POLICY, PLAN_POLICY, plan_lost_goal_tokens
+        from .model import LARGE_PAGE_PLAN_POLICY, PLAN_POLICY, plan_invented_tokens, plan_lost_goal_tokens
 
         elements, _, _ = action_space(page["actions"])
         labels = [
@@ -405,6 +406,7 @@ class LlamaCppModel:
                 and 1 <= len(steps) <= 12
                 and all(isinstance(s, str) and 0 < len(s.strip()) <= 500 for s in steps)
                 and not plan_lost_goal_tokens(goal, steps)
+                and not plan_invented_tokens(goal, steps, [entry.get("label", "") for entry in labels])
             ):
                 telemetry = {
                     "model": self.name,

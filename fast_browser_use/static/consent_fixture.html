@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Consent Wall Demo</title>
+<style>
+body{font-family:sans-serif;max-width:720px;margin:48px auto}
+input{width:60%;padding:8px}button{padding:8px 16px}
+nav a{margin-right:16px}
+#banner{position:fixed;left:0;right:0;bottom:0;background:#eee;border-top:1px solid #999;padding:16px;display:flex;gap:12px;align-items:center}
+#banner a{margin-left:8px}
+</style>
+</head>
+<body>
+<h1>演示门户</h1>
+<nav>
+  <a href="#images">Images</a>
+  <a href="#news">News</a>
+  <a href="#maps">Maps</a>
+  <a href="#video">Video</a>
+  <a href="#shopping">Shopping</a>
+</nav>
+<p>一个带 cookie 同意墙的最小门户页，用于验证同意墙链路：Accept 先行、隐私链接不可点。</p>
+<form onsubmit="return doSearch()">
+  <input id="q" type="text" placeholder="Enter your search term" aria-label="Enter your search term">
+  <button id="go" type="submit">Search</button>
+</form>
+<div id="results"></div>
+<div id="banner" role="dialog" aria-label="Cookie consent">
+  <span>We use cookies to improve your experience.</span>
+  <button id="accept" onclick="acceptCookies()">Accept</button>
+  <button onclick="document.getElementById('banner').remove()">Manage preferences</button>
+  <a href="#privacy-statement">Privacy Statement</a>
+  <a href="#cookie-policy">Cookie Policy</a>
+</div>
+<script>
+function acceptCookies() {
+  var b = document.getElementById("banner");
+  if (b) { b.remove(); }
+}
+function doSearch() {
+  var q = document.getElementById("q").value.trim();
+  var r = document.getElementById("results");
+  if (q) { r.innerHTML = "<ul><li>Result for <b>" + q + "</b> — channel home</li></ul>"; }
+  return false;
+}
+</script>
+</body>
+</html>
