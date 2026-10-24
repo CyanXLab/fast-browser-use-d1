@@ -53,7 +53,11 @@ RESCUE_INSTRUCTION = (
     'element-oriented browser subgoal to try next>"}\n'
     'If the task itself is ambiguous and you need the user to decide, reply with:\n'
     '  {"need_user": true, "question": "<the question for the user>"}\n'
-    "Never invent page elements that are not listed in the observed state."
+    "Never invent page elements that are not listed in the observed state. The "
+    "agent can ONLY click visible elements and type text into visible fields on "
+    "the CURRENT page; it cannot type URLs or navigate directly. Suggested goals "
+    "must be achievable on the current page (e.g. search from the current page's "
+    "own search box), never 'go to another site' as a separate step."
 )
 
 CONSULT_INSTRUCTION = (
@@ -83,7 +87,11 @@ RESCUE_INSTRUCTION = (
     'element-oriented browser subgoal to try next>"}\n'
     'If the task itself is ambiguous and you need the user to decide, reply with:\n'
     '  {"need_user": true, "question": "<the question for the user>"}\n'
-    "Never invent page elements that are not listed in the observed state."
+    "Never invent page elements that are not listed in the observed state. The "
+    "agent can ONLY click visible elements and type text into visible fields on "
+    "the CURRENT page; it cannot type URLs or navigate directly. Suggested goals "
+    "must be achievable on the current page (e.g. search from the current page's "
+    "own search box), never 'go to another site' as a separate step."
 )
 
 # A first-class candidate the local decision model can score like any action.

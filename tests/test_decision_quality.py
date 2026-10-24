@@ -111,10 +111,28 @@ def test_repeats_guard_never_penalizes_fills():
         click("go", "Go"),
     ]
     scores = [0.4, 0.6]
-    history = _history([("box", False), ("box", False)])
+    history = _history([("box", False), ("box", False)])  # kind=click in this helper
     adjusted = model.demote_repeats(candidates, scores, history)
     probs = dict(zip([c["id"] for c in candidates], adjusted, strict=True))
-    assert probs["box"] == 0.4  # retrying a fill is legitimate
+    assert probs["box"] == 0.4  # click-repeat on another element does not touch the fill
+
+
+def test_repeats_guard_softly_penalizes_repeated_fills():
+    # Real bing case: re-typing the same query into a box whose fill+Enter
+    # already produced the results page (no further change). Demote softly so
+    # untried candidates (click a result) win, but corrections stay possible.
+    candidates = [
+        {"id": "box", "operation": "TYPE_TEXT", "target": "1", "description": "TYPE_TEXT [1] Search box"},
+        click("result", "bilibili CyanXLab"),
+    ]
+    scores = [0.7, 0.3]
+    history = [
+        {"choice": "box", "kind": "fill", "page_changed": False, "operation": "TYPE_TEXT", "action": "box"},
+    ]
+    adjusted = model.demote_repeats(candidates, scores, history)
+    probs = dict(zip([c["id"] for c in candidates], adjusted, strict=True))
+    assert probs["result"] > probs["box"]  # untried result link overtakes the refill
+    assert probs["box"] > 0  # correction remains possible
 
 
 # --- plan fidelity ----------------------------------------------------------

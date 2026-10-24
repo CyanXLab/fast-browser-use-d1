@@ -226,28 +226,35 @@ def focus_candidates(candidates, goal, *, limit=None):
     return [c for i, c in enumerate(candidates) if i in kept]
 
 
-def demote_repeats(candidates, scores, history, *, factor=0.15):
-    """Penalize clicks that recently produced no page change (wander guard).
+def demote_repeats(candidates, scores, history, *, factor=0.15, fill_factor=0.3):
+    """Penalize actions that recently produced no page change (wander guard).
 
     Real logs show the model re-clicking "Maps"/"Privacy Statement" for many
-    steps at conf 0.1. Demoting already-tried no-effect clicks returns that
+    steps at conf 0.1, and re-typing the same text into a search box that
+    already submitted. Demoting already-tried no-effect actions returns that
     probability mass to untried candidates. Returns renormalized scores, or
     None when the guard does not apply (nothing to demote, or everything was
-    already tried).
+    already tried). Fills get a softer factor: re-typing a DIFFERENT value
+    into a field is sometimes a legitimate correction.
     """
-    repeats = {
-        h.get("choice")
-        for h in (history or [])[-6:]
-        if h.get("page_changed") is False and h.get("choice") and h.get("kind") not in {"wait", "ask_llm", "no_value"}
-    }
+    skip = {"wait", "ask_llm", "no_value"}
+    recent = [h for h in (history or [])[-6:] if h.get("choice") and h.get("kind") not in skip]
+    click_repeats = {h["choice"] for h in recent if h.get("page_changed") is False and h.get("kind") != "fill"}
+    fill_repeats = {h["choice"] for h in recent if h.get("page_changed") is False and h.get("kind") == "fill"}
+    repeats = click_repeats | fill_repeats
     if not repeats or len(candidates) <= 1:
         return None
     if all(c["id"] in repeats for c in candidates):
         return None
-    adjusted = [
-        s * factor if c["id"] in repeats and c["operation"] == "CLICK" else s
-        for c, s in zip(candidates, scores, strict=True)
-    ]
+
+    def scale(c):
+        if c["id"] in click_repeats and c["operation"] == "CLICK":
+            return factor
+        if c["id"] in fill_repeats and c["operation"] == "TYPE_TEXT":
+            return fill_factor
+        return 1.0
+
+    adjusted = [s * scale(c) for c, s in zip(candidates, scores, strict=True)]
     total = sum(adjusted)
     if total <= 0:
         return None

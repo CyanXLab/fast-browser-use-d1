@@ -293,6 +293,23 @@ def browser_operation(request):
                         modifiers=4 if sys.platform == "darwin" else 2,
                     )
                     call("Input.insertText", text=request["text"])
+                    # Single-field forms (search boxes, one-box logins) submit
+                    # natively on Enter. Pressing it here removes the weakest
+                    # decision from a small model's plate: "now find the
+                    # submit button". Disable with FBU_FILL_ENTER=0.
+                    if action.get("enter_submit") and os.environ.get("FBU_FILL_ENTER", "1") != "0":
+                        # keyDown with text="\r" runs the browser's implicit
+                        # form submission; rawKeyDown alone does not (tested on bing).
+                        for event, text in (("keyDown", "\r"), ("keyUp", "")):
+                            call(
+                                "Input.dispatchKeyEvent",
+                                type=event,
+                                key="Enter",
+                                code="Enter",
+                                windowsVirtualKeyCode=13,
+                                nativeVirtualKeyCode=13,
+                                text=text,
+                            )
         return {"executed": action["id"]}
 
     info = evaluate(READ_STATE)

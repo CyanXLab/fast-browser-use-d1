@@ -90,7 +90,24 @@
           (rname==='combobox' && ['INPUT','TEXTAREA'].includes(e.tagName)));
       const value='value' in e ? String(e.value) :
         e.isContentEditable || rname==='combobox' ? e.innerText.trim() : '';
-      actions.push({...base,kind:editable?'fill':'click',value});
+      if (editable) {
+        // Single-field forms submit natively on Enter (search boxes, one-box
+        // logins). Marking them lets the executor press Enter right after the
+        // fill instead of hoping the decision model clicks the submit button.
+        // Only text-entry controls count: submit inputs/buttons (e.g. bing's
+        // <input type="submit" id="sb_form_go">) must not block the marking.
+        const form=e.closest('form');
+        let solo=false;
+        if (form) {
+          const text_types=['','text','search','email','tel','url','password','number'];
+          const fields=[...form.querySelectorAll('input,textarea')].filter(f =>
+            !f.disabled && !f.readOnly && text_types.includes((f.type||'text').toLowerCase()) && visible(f));
+          solo=fields.length===1;
+        }
+        actions.push(solo ? {...base,kind:'fill',value,enter_submit:true} : {...base,kind:'fill',value});
+      } else {
+        actions.push({...base,kind:'click',value});
+      }
       if (editable) actions.push({...base,kind:'click',value,label:'Open '+base.label});
     }
   }

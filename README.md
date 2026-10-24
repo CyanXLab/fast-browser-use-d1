@@ -116,6 +116,7 @@ label token，llama.cpp 的 `/v1/systemone` 端点**一次前向传播**返回�
 | `FBU_STEP_DETAIL` | `1` | 每步决策细节展示开关 |
 | `FBU_MAX_CANDIDATES` | `28` | 决策候选表上限：大页面（如 bing）自动砍掉与目标无关的导航链接，提升置信度并降低 CPU 耗时 |
 | `FBU_NO_VALUE_LIMIT` | `3` | 连续 N 次无法确定输入文本即停止，绝不把模型拒绝语（如 “None of the above…”）打进页面 |
+| `FBU_FILL_ENTER` | `1` | 单输入框表单（搜索框）填完自动回车提交，跳过“找提交按钮”这一最弱决策 |
 | `FBU_PLAN` | `auto` | 多步目标自动拆解子目标清单 |
 | `FBU_MAX_STEPS` | `60` | 每任务最大浏览器动作数 |
 | `FBU_ASK_LLM_LIMIT` | `2` | 连续 LLM 咨询上限（防空转） |

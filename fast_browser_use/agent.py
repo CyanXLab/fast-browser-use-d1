@@ -318,6 +318,12 @@ class Agent:
                     state["status"] = "ready"
                 else:
                     state["status"] = "blocked"
+                    last = state["history"][-1] if state["history"] else {}
+                    state["summary"] = (
+                        "连续多次动作没有页面变化，已停止。最后动作："
+                        f"{last.get('action') or '无'}；可在 chat 中换一种说法重试，"
+                        "或开启 FBU_LLM_ESCALATION=auto 让远程 LLM 参与救援。"
+                    )
             else:
                 state["status"] = "ready"
         else:
